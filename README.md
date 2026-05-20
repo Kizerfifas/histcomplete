@@ -106,13 +106,46 @@ EOF
 source ~/.bashrc
 ```
 
-### Обновление
+### Обновление (уже установлена)
 
-Повторите `./install.sh` из каталога с новой версией файлов, затем:
+Установка кладёт файлы только в `~/.local/bin` и `~/.local/share/histcomplete`.  
+`~/.bashrc` меняется **один раз** при первой установке — при обновлении его трогать не нужно.
+
+**Если репозиторий уже клонирован** (рекомендуется):
 
 ```bash
+cd ~/projects/histcomplete   # или ваш путь к clone
+git pull
+./install.sh
 source ~/.bashrc
 ```
+
+**Если ставили без git** — скачайте свежую версию и снова запустите установку:
+
+```bash
+cd /tmp
+git clone git@github.com:Kizerfifas/histcomplete.git
+cd histcomplete
+./install.sh
+source ~/.bashrc
+```
+
+**Что обновляется:**
+
+| Файл | Куда |
+|------|------|
+| `histcomplete` | `~/.local/bin/histcomplete` |
+| `bash-integration.sh` | `~/.local/share/histcomplete/bash-integration.sh` |
+| `README.md` | `~/.local/share/histcomplete/README.md` |
+
+**Проверка версии после обновления** — в новом терминале или после `source ~/.bashrc`:
+
+```bash
+histcomplete --prefix ls | head -3
+bind -X 2>/dev/null | grep histcomplete
+```
+
+Открытые терминалы, запущенные **до** `source ~/.bashrc`, продолжают работать со старыми привязками клавиш — перезапустите их или выполните `source ~/.bashrc` в каждом.
 
 ---
 
