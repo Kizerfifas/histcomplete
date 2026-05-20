@@ -1,0 +1,216 @@
+#!/usr/bin/env python3
+"""
+Search shell command history by substring and suggest completions.
+
+Usage:
+  histcomplete git              # list matches
+  histcomplete -i git           # interactive pick
+  histcomplete -p -i docker     # print one command (for scripts)
+  histcomplete -c "git sta"     # common-prefix completion
+  histcomplete -c --suffix "git sta"  # only the tail to append
+"""
+
+from __future__ import annotations
+
+import argparse
+import os
+import sys
+from pathlib import Path
+
+
+def history_paths() -> list[Path]:
+    home = Path.home()
+    paths: list[Path] = []
+    bash = home / ".bash_history"
+    if bash.is_file():
+        paths.append(bash)
+    zsh = home / ".zsh_history"
+    if zsh.is_file():
+        paths.append(zsh)
+    return paths
+
+
+def parse_zsh_line(line: str) -> str | None:
+    line = line.strip()
+    if not line or line.startswith("#"):
+        return None
+    if line.startswith(":") and ";" in line:
+        return line.split(";", 1)[1].strip() or None
+    return line
+
+
+def load_extra_commands() -> list[str]:
+    """Lines from HISTCOMPLETE_EXTRA (current shell session from bash)."""
+    raw = os.environ.get("HISTCOMPLETE_EXTRA", "")
+    if not raw:
+        return []
+    return [ln.strip() for ln in raw.splitlines() if ln.strip()]
+
+
+def load_commands() -> list[str]:
+    """Unique commands, most recent first."""
+    seen: set[str] = set()
+    ordered: list[str] = []
+
+    for cmd in load_extra_commands():
+        if cmd not in seen:
+            seen.add(cmd)
+            ordered.append(cmd)
+
+    for path in history_paths():
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+
+        lines = text.splitlines()
+        if path.name == ".zsh_history":
+            raw = [parse_zsh_line(ln) for ln in lines]
+            raw = [c for c in raw if c]
+        else:
+            raw = [ln.strip() for ln in lines if ln.strip()]
+
+        # Files are usually oldest-first; process in reverse for recency.
+        for cmd in reversed(raw):
+            if cmd not in seen:
+                seen.add(cmd)
+                ordered.append(cmd)
+
+    return ordered
+
+
+def score_match(query: str, command: str) -> tuple[int, int, str]:
+    q = query.lower()
+    cl = command.lower()
+    if cl.startswith(q):
+        tier = 0
+    elif q in cl:
+        tier = 1
+    else:
+        tier = 2
+    return (tier, len(command), command)
+
+
+def search(query: str, commands: list[str], limit: int, *, prefix_only: bool) -> list[str]:
+    if not query:
+        return commands[:limit]
+
+    q = query.lower()
+    if prefix_only:
+        matches = [c for c in commands if c.lower().startswith(q)]
+    else:
+        matches = [c for c in commands if q in c.lower()]
+    matches.sort(key=lambda c: score_match(query, c))
+    return matches[:limit]
+
+
+def common_prefix(strings: list[str]) -> str:
+    if not strings:
+        return ""
+    prefix = strings[0]
+    for s in strings[1:]:
+        while prefix and not s.startswith(prefix):
+            prefix = prefix[:-1]
+    return prefix
+
+
+def interactive_pick(matches: list[str]) -> str | None:
+    if not matches:
+        return None
+    if len(matches) == 1:
+        return matches[0]
+
+    limit = min(20, len(matches))
+    print("Совпадения в истории:", file=sys.stderr)
+    for i, cmd in enumerate(matches[:limit], 1):
+        print(f"  {i:2}. {cmd}", file=sys.stderr)
+
+    try:
+        choice = input("Номер [Enter=1, q=отмена]: ").strip()
+    except (EOFError, KeyboardInterrupt):
+        return None
+
+    if choice.lower() == "q":
+        return None
+    if choice == "":
+        return matches[0]
+    try:
+        idx = int(choice) - 1
+        if 0 <= idx < limit:
+            return matches[idx]
+    except ValueError:
+        pass
+    return matches[0]
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(
+        description="Поиск команд в истории shell и автодополнение"
+    )
+    parser.add_argument("query", nargs="?", default="", help="Подстрока для поиска")
+    parser.add_argument("-n", "--limit", type=int, default=25, help="Макс. число результатов")
+    parser.add_argument(
+        "-i", "--interactive", action="store_true", help="Интерактивный выбор из списка"
+    )
+    parser.add_argument(
+        "-p", "--pick", action="store_true", help="Вывести одну команду (для подстановки)"
+    )
+    parser.add_argument(
+        "-c", "--complete", action="store_true", help="Общий префикс совпадений (для Tab)"
+    )
+    parser.add_argument(
+        "--suffix",
+        action="store_true",
+        help="С -c: только хвост после query (для readline)",
+    )
+    parser.add_argument(
+        "--prefix",
+        action="store_true",
+        help="Только команды, начинающиеся с query (для Tab-дополнения)",
+    )
+    args = parser.parse_args()
+
+    commands = load_commands()
+    if not commands:
+        print("История пуста или файлы не найдены", file=sys.stderr)
+        return 1
+
+    matches = search(args.query, commands, args.limit, prefix_only=args.prefix)
+
+    if args.complete and args.query:
+        if not matches:
+            return 1
+        prefix = common_prefix(matches)
+        if args.suffix:
+            q = args.query
+            if prefix.lower().startswith(q.lower()):
+                out = prefix[len(q) :]
+            else:
+                out = prefix
+            sys.stdout.write(out)
+        else:
+            sys.stdout.write(prefix)
+        return 0
+
+    if args.pick or args.interactive:
+        selected = (
+            interactive_pick(matches)
+            if args.interactive and len(matches) > 1
+            else (matches[0] if matches else None)
+        )
+        if not selected:
+            return 1
+        print(selected)
+        return 0
+
+    if not matches:
+        print("Нет совпадений", file=sys.stderr)
+        return 1
+
+    for cmd in matches:
+        print(cmd)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
