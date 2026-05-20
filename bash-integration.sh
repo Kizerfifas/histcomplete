@@ -76,7 +76,7 @@ _histcomplete_expand() {
         printf '  %2d) %s\n' "$i" "$m" >&2
         ((i++)) || true
     done
-    printf '\nНомер + Alt+h — выбрать; Alt+h без номера — [1]; Esc — отмена\n' >&2
+    printf '\nНомер + Alt+h — выбрать; Alt+h без номера — [1]\n' >&2
 
     READLINE_LINE=
     READLINE_POINT=0
