@@ -1,8 +1,8 @@
 # histcomplete — дополнение целой команды из истории
 # source ~/.local/share/histcomplete/bash-integration.sh
 #
-# Alt+h     — дополнить строку из истории (Tab не трогаем — пути как раньше)
-# Ctrl+Alt+h — интерактивный выбор из списка
+# Alt+h      — 1-е нажатие: список; 2-е: подставить [1] из списка
+# Ctrl+Alt+h — интерактивный выбор по номеру
 # ↑ / ↓     — листать команды с тем же префиксом
 
 _hc_bin() {
@@ -23,10 +23,10 @@ _hc_matches() {
     "$bin" --prefix -n 50 "$query"
 }
 
-# Alt+h: ls → ls -la ~/projects
+# Alt+h: 1 — список, 2 — подставить первую строку (самую свежую)
 _histcomplete_expand() {
     local cur="${READLINE_LINE}"
-    local matches=() count suffix best
+    local matches=() count i m
 
     [[ -n "$cur" ]] || return 1
 
@@ -34,38 +34,23 @@ _histcomplete_expand() {
     count=${#matches[@]}
     (( count > 0 )) || return 1
 
-    if (( count == 1 )); then
+    # Второе Alt+h на той же строке — подставить [1]
+    if [[ "${_HC_EXPAND_STATE:-}" == "$cur" ]]; then
         READLINE_LINE=${matches[0]}
         READLINE_POINT=${#READLINE_LINE}
-        _HC_EXPAND_LIST=
+        _HC_EXPAND_STATE=
         return 0
     fi
 
-    if [[ "${_HC_EXPAND_LIST:-}" == "$cur" ]]; then
-        printf '\n' >&2
-        local i=1 m
-        for m in "${matches[@]}"; do
-            printf '  %2d) %s\n' "$i" "$m" >&2
-            ((i++))
-        done
-        printf '\nAlt+h ещё раз — подставить самую свежую; ↑↓ — листать по префиксу «%s»\n' "$cur" >&2
-        _HC_EXPAND_LIST=
-        best=${matches[0]}
-        READLINE_LINE=$best
-        READLINE_POINT=${#READLINE_LINE}
-        return 0
-    fi
-
-    _HC_EXPAND_LIST=$cur
-    suffix=$(_hc_bin --prefix -c --suffix "$cur" 2>/dev/null) || suffix=
-    if [[ -n "$suffix" ]]; then
-        READLINE_LINE="${cur}${suffix}"
-        READLINE_POINT=${#READLINE_LINE}
-        return 0
-    fi
-
-    READLINE_LINE=${matches[0]}
-    READLINE_POINT=${#READLINE_LINE}
+    # Первое Alt+h — только список (строку ввода не меняем)
+    _HC_EXPAND_STATE=$cur
+    printf '\n' >&2
+    i=1
+    for m in "${matches[@]}"; do
+        printf '  %2d) %s\n' "$i" "$m" >&2
+        ((i++)) || true
+    done
+    printf '\nAlt+h — подставить [1]; ↑↓ — листать по «%s»\n' "$cur" >&2
     return 0
 }
 
