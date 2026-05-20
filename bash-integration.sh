@@ -1,7 +1,7 @@
 # histcomplete — дополнение целой команды из истории
 # source ~/.local/share/histcomplete/bash-integration.sh
 #
-# Alt+h      — 1-е: список; 2-е: [1] или номер + Alt+h (например 3 + Alt+h)
+# Alt+h      — 1-е: список (строка очищается); 2-е: номер+Alt+h или Alt+h = [1]
 # Ctrl+Alt+h — интерактивный выбор (ввод номера в prompt)
 # ↑ / ↓     — листать команды с тем же префиксом
 
@@ -28,14 +28,11 @@ _hc_matches() {
     "$bin" --prefix -n 50 "$query"
 }
 
-# Alt+h: список → подстановка [1] или выбор по номеру
+# Alt+h: список (очистить строку) → номер + Alt+h или пустая строка + Alt+h = [1]
 _histcomplete_expand() {
     local cur="${READLINE_LINE}"
     local matches=() count i m idx
 
-    [[ -n "$cur" ]] || return 1
-
-    # После списка: номер в строке (3) или тот же префикс (ls) → подстановка
     if [[ -n "${_HC_EXPAND_QUERY:-}" && ${#_HC_MATCHES[@]} -gt 0 ]]; then
         matches=("${_HC_MATCHES[@]}")
 
@@ -49,10 +46,12 @@ _histcomplete_expand() {
             fi
             printf '\nНет пункта %s (в списке %d)\n' "$cur" "${#matches[@]}" >&2
             _hc_expand_reset
+            READLINE_LINE=
+            READLINE_POINT=0
             return 1
         fi
 
-        if [[ "$cur" == "$_HC_EXPAND_QUERY" ]]; then
+        if [[ -z "$cur" ]]; then
             READLINE_LINE=${matches[0]}
             READLINE_POINT=${#READLINE_LINE}
             _hc_expand_reset
@@ -61,6 +60,8 @@ _histcomplete_expand() {
 
         _hc_expand_reset
     fi
+
+    [[ -n "$cur" ]] || return 1
 
     mapfile -t matches < <(_hc_matches "$cur") || true
     count=${#matches[@]}
@@ -75,7 +76,10 @@ _histcomplete_expand() {
         printf '  %2d) %s\n' "$i" "$m" >&2
         ((i++)) || true
     done
-    printf '\nAlt+h — [1]; цифра + Alt+h — выбрать пункт; ↑↓ — листать «%s»\n' "$cur" >&2
+    printf '\nНомер + Alt+h — выбрать; Alt+h без номера — [1]; Esc — отмена\n' >&2
+
+    READLINE_LINE=
+    READLINE_POINT=0
     return 0
 }
 
