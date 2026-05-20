@@ -1,8 +1,8 @@
 # histcomplete — дополнение целой команды из истории
 # source ~/.local/share/histcomplete/bash-integration.sh
 #
-# Alt+h      — 1-е нажатие: список; 2-е: подставить [1] из списка
-# Ctrl+Alt+h — интерактивный выбор по номеру
+# Alt+h      — 1-е: список; 2-е: [1] или номер + Alt+h (например 3 + Alt+h)
+# Ctrl+Alt+h — интерактивный выбор (ввод номера в prompt)
 # ↑ / ↓     — листать команды с тем же префиксом
 
 _hc_bin() {
@@ -11,6 +11,11 @@ _hc_bin() {
 
 _hc_session_export() {
     history 512 2>/dev/null | sed -E 's/^[[:space:]]*[0-9]+[[:space:]]+//' || true
+}
+
+_hc_expand_reset() {
+    _HC_EXPAND_QUERY=
+    _HC_MATCHES=()
 }
 
 _hc_matches() {
@@ -23,34 +28,54 @@ _hc_matches() {
     "$bin" --prefix -n 50 "$query"
 }
 
-# Alt+h: 1 — список, 2 — подставить первую строку (самую свежую)
+# Alt+h: список → подстановка [1] или выбор по номеру
 _histcomplete_expand() {
     local cur="${READLINE_LINE}"
-    local matches=() count i m
+    local matches=() count i m idx
 
     [[ -n "$cur" ]] || return 1
+
+    # После списка: номер в строке (3) или тот же префикс (ls) → подстановка
+    if [[ -n "${_HC_EXPAND_QUERY:-}" && ${#_HC_MATCHES[@]} -gt 0 ]]; then
+        matches=("${_HC_MATCHES[@]}")
+
+        if [[ "$cur" =~ ^[0-9]+$ ]]; then
+            idx=$((10#${cur} - 1))
+            if (( idx >= 0 && idx < ${#matches[@]} )); then
+                READLINE_LINE=${matches[idx]}
+                READLINE_POINT=${#READLINE_LINE}
+                _hc_expand_reset
+                return 0
+            fi
+            printf '\nНет пункта %s (в списке %d)\n' "$cur" "${#matches[@]}" >&2
+            _hc_expand_reset
+            return 1
+        fi
+
+        if [[ "$cur" == "$_HC_EXPAND_QUERY" ]]; then
+            READLINE_LINE=${matches[0]}
+            READLINE_POINT=${#READLINE_LINE}
+            _hc_expand_reset
+            return 0
+        fi
+
+        _hc_expand_reset
+    fi
 
     mapfile -t matches < <(_hc_matches "$cur") || true
     count=${#matches[@]}
     (( count > 0 )) || return 1
 
-    # Второе Alt+h на той же строке — подставить [1]
-    if [[ "${_HC_EXPAND_STATE:-}" == "$cur" ]]; then
-        READLINE_LINE=${matches[0]}
-        READLINE_POINT=${#READLINE_LINE}
-        _HC_EXPAND_STATE=
-        return 0
-    fi
+    _HC_EXPAND_QUERY=$cur
+    _HC_MATCHES=("${matches[@]}")
 
-    # Первое Alt+h — только список (строку ввода не меняем)
-    _HC_EXPAND_STATE=$cur
     printf '\n' >&2
     i=1
     for m in "${matches[@]}"; do
         printf '  %2d) %s\n' "$i" "$m" >&2
         ((i++)) || true
     done
-    printf '\nAlt+h — подставить [1]; ↑↓ — листать по «%s»\n' "$cur" >&2
+    printf '\nAlt+h — [1]; цифра + Alt+h — выбрать пункт; ↑↓ — листать «%s»\n' "$cur" >&2
     return 0
 }
 
@@ -65,6 +90,7 @@ _histcomplete_bind() {
     cmd=$("$bin" --prefix -i -p "$cur" 2>/dev/null) || return 1
     READLINE_LINE=$cmd
     READLINE_POINT=${#cmd}
+    _hc_expand_reset
 }
 
 hc() {
@@ -74,6 +100,7 @@ hc() {
     cmd=$("$(_hc_bin)" --prefix -i -p "$@" 2>/dev/null) || return 1
     READLINE_LINE=$cmd
     READLINE_POINT=${#cmd}
+    _hc_expand_reset
 }
 
 if [[ -n "${BASH_VERSION}" ]]; then
@@ -82,12 +109,10 @@ if [[ -n "${BASH_VERSION}" ]]; then
     bind '"\e[C": forward-word' 2>/dev/null || true
     bind '"\e[D": backward-word' 2>/dev/null || true
 
-    # Снять старый перехват Tab (если обновлялись с прошлой версии)
     bind -r '\C-i' 2>/dev/null || true
     bind '"\t": complete' 2>/dev/null || true
     bind '"\C-i": complete' 2>/dev/null || true
 
-    # Дополнение из истории — Alt+h (h = history)
     bind -x '"\eh": _histcomplete_expand' 2>/dev/null || true
     bind -x '"\e\C-h": _histcomplete_bind' 2>/dev/null || true
 fi
