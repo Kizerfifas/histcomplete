@@ -1,5 +1,7 @@
 # histcomplete
 
+**Русский** · [English](README.en.md)
+
 Репозиторий: [github.com/Kizerfifas/histcomplete](https://github.com/Kizerfifas/histcomplete)
 
 ```bash
@@ -136,7 +138,7 @@ source ~/.bashrc
 |------|------|
 | `histcomplete` | `~/.local/bin/histcomplete` |
 | `bash-integration.sh` | `~/.local/share/histcomplete/bash-integration.sh` |
-| `README.md` | `~/.local/share/histcomplete/README.md` |
+| `README.md`, `README.en.md` | `~/.local/share/histcomplete/` |
 
 **Проверка версии после обновления** — в новом терминале или после `source ~/.bashrc`:
 
@@ -297,12 +299,8 @@ ls               # набрать
 git status
 
 git              # набрать
-# Alt+h, Alt+h   # список → подставить [1]
-```
+# Alt+h → номер + Alt+h или Alt+h для [1]
 
-### Git
-
-```bash
 histcomplete --prefix git pull
 # → git pull origin main
 # → git pull --rebase
@@ -474,7 +472,8 @@ histcomplete/
 ├── histcomplete           # Python: поиск и CLI
 ├── bash-integration.sh    # привязки readline для bash
 ├── install.sh             # установка в ~/.local
-└── README.md              # этот файл
+├── README.md              # документация (RU)
+└── README.en.md           # documentation (EN)
 ```
 
 ---
