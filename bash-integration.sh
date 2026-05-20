@@ -4,9 +4,15 @@
 # Alt+h      — 1-е: список (строка очищается); 2-е: номер+Alt+h или Alt+h = [1]
 # Ctrl+Alt+h — интерактивный выбор (ввод номера в prompt)
 # ↑ / ↓     — листать команды с тем же префиксом
+#
+# bind -x выполняется в подоболочке — состояние списка хранится в файле.
 
 _hc_bin() {
     command -v histcomplete 2>/dev/null || echo "${HOME}/.local/bin/histcomplete"
+}
+
+_hc_state_file() {
+    printf '%s/histcomplete/pending' "${XDG_CACHE_HOME:-${HOME}/.cache}"
 }
 
 _hc_session_export() {
@@ -14,8 +20,32 @@ _hc_session_export() {
 }
 
 _hc_expand_reset() {
-    _HC_EXPAND_QUERY=
-    _HC_MATCHES=()
+    rm -f "$(_hc_state_file)"
+}
+
+_hc_state_save() {
+    local query="$1"
+    shift
+    local f matches=("$@") m
+    f=$(_hc_state_file)
+    mkdir -p "$(dirname "$f")"
+    {
+        printf '%s\0' "$query"
+        for m in "${matches[@]}"; do
+            printf '%s\0' "$m"
+        done
+    } >"$f"
+}
+
+_hc_state_load() {
+    local f parts
+    f=$(_hc_state_file)
+    [[ -f "$f" ]] || return 1
+    mapfile -d '' -t parts <"$f"
+    ((${#parts[@]} >= 2)) || return 1
+    _HC_EXPAND_QUERY=${parts[0]}
+    _HC_MATCHES=("${parts[@]:1}")
+    ((${#_HC_MATCHES[@]} > 0)) || return 1
 }
 
 _hc_matches() {
@@ -25,16 +55,16 @@ _hc_matches() {
     [[ -x "$bin" && -n "$query" ]] || return 1
     HISTCOMPLETE_EXTRA="$(_hc_session_export)"
     export HISTCOMPLETE_EXTRA
-    "$bin" --prefix -n 50 "$query"
+    "$bin" --prefix -n 50 "$query" 2>/dev/null
 }
 
-# Alt+h: список (очистить строку) → номер + Alt+h или пустая строка + Alt+h = [1]
 _histcomplete_expand() {
     local cur="${READLINE_LINE}"
-    local matches=() count i m idx
+    local matches=() count i m idx query
 
-    if [[ -n "${_HC_EXPAND_QUERY:-}" && ${#_HC_MATCHES[@]} -gt 0 ]]; then
+    if _hc_state_load; then
         matches=("${_HC_MATCHES[@]}")
+        query=$_HC_EXPAND_QUERY
 
         if [[ "$cur" =~ ^[0-9]+$ ]]; then
             idx=$((10#${cur} - 1))
@@ -44,7 +74,7 @@ _histcomplete_expand() {
                 _hc_expand_reset
                 return 0
             fi
-            printf '\nНет пункта %s (в списке %d)\n' "$cur" "${#matches[@]}" >&2
+            printf '\nНет пункта %s (в списке %d, искали «%s»)\n' "$cur" "${#matches[@]}" "$query" >&2
             _hc_expand_reset
             READLINE_LINE=
             READLINE_POINT=0
@@ -65,10 +95,12 @@ _histcomplete_expand() {
 
     mapfile -t matches < <(_hc_matches "$cur") || true
     count=${#matches[@]}
-    (( count > 0 )) || return 1
+    if (( count == 0 )); then
+        printf '\nНет команд в истории с префиксом «%s»\n' "$cur" >&2
+        return 1
+    fi
 
-    _HC_EXPAND_QUERY=$cur
-    _HC_MATCHES=("${matches[@]}")
+    _hc_state_save "$cur" "${matches[@]}"
 
     printf '\n' >&2
     i=1
@@ -76,7 +108,7 @@ _histcomplete_expand() {
         printf '  %2d) %s\n' "$i" "$m" >&2
         ((i++)) || true
     done
-    printf '\nНомер + Alt+h — выбрать; Alt+h без номера — [1]\n' >&2
+    printf '\nНомер + Alt+h — выбрать; Alt+h без номера — [1]  (префикс: %s)\n' "$cur" >&2
 
     READLINE_LINE=
     READLINE_POINT=0
